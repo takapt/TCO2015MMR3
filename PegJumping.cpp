@@ -258,6 +258,18 @@ struct Move
     Pos start;
     vector<int> move_dir;
 
+    Move(){}
+
+    Move(const Pos& start)
+        : start(start)
+    {
+    }
+
+    Move(const Pos& start, const vector<int>& move_dir)
+        : start(start), move_dir(move_dir)
+    {
+    }
+
     string to_res() const
     {
         stringstream ss;
@@ -300,6 +312,32 @@ public:
         return can_move(pos.x, pos.y, dir);
     }
 
+    bool match(int x, int y, int dir, bool next_peg, bool nextnext_peg) const
+    {
+        assert(in(x, y));
+        return in(x + DX[dir], y + DY[dir]) && in(x + 2 * DX[dir], y + 2 * DY[dir])
+            && peg(x + DX[dir], y + DY[dir]) == next_peg && peg(x + 2 * DX[dir], y + 2 * DY[dir]) == nextnext_peg;
+    }
+    bool match(const Pos& pos, int dir, bool next_peg, bool nextnext_peg) const
+    {
+        return match(pos.x, pos.y, dir, next_peg, nextnext_peg);
+    }
+    bool match(int x, int y, int dir, const vector<bool>& peg_pattern) const
+    {
+        rep(i, peg_pattern.size())
+        {
+            x += DX[dir];
+            y += DY[dir];
+            if (!in(x, y) || peg_pattern[i] != peg(x, y))
+                return false;
+        }
+        return true;
+    }
+    bool match(const Pos& pos, int dir, const vector<bool>& peg_pattern) const
+    {
+        return match(pos.x, pos.y, dir, peg_pattern);
+    }
+
     void move(int x, int y, int dir)
     {
         assert(can_move(x, y, dir));
@@ -322,6 +360,19 @@ public:
         }
     }
 
+    int move_score(const Move& m)
+    {
+        int sum = 0;
+        Pos p = m.start;
+        for (int dir : m.move_dir)
+        {
+            sum += at(p + DIFF[dir]);
+            move(p, dir);
+            p += 2 * DIFF[dir];
+        }
+        return sum * m.move_dir.size();
+    }
+
     int at(int x, int y) const
     {
         assert(in(x, y));
@@ -330,6 +381,16 @@ public:
     int at(const Pos& pos) const
     {
         return at(pos.x, pos.y);
+    }
+
+    bool peg(int x, int y) const
+    {
+        assert(in(x, y));
+        return at(x, y);
+    }
+    bool peg(const Pos& pos) const
+    {
+        return peg(pos.x, pos.y);
     }
 
     int size() const
@@ -363,6 +424,19 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
         Board board;
         Move main_move;
         vector<Move> prepare_moves;
+
+        ull score() const
+        {
+            ull s = main_move.move_dir.size() * main_move.move_dir.size();
+            for (auto& m : prepare_moves)
+                s -= m.move_dir.size();
+            return s;
+        }
+
+        bool operator<(const State& other) const
+        {
+            return score() > other.score();
+        }
     };
 
     vector<State> q[64 * 64];
@@ -372,38 +446,69 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
     q[0].push_back(start_state);
     rep(qi, start_board.size() * start_board.size())
     {
-        while (q[qi].size() > 2)
+        sort(all(q[qi]));
+        while (q[qi].size() > 20)
             q[qi].pop_back();
 
-        for (auto& state : q[qi])
+        for (const State& state : q[qi])
         {
+            set<Pos> cons_peg, cons_empty;
             Pos cur_pos = state.main_move.start;
-            for (auto& dir : state.main_move.move_dir)
-                cur_pos += 2 * DIFF[dir];
-
-            rep(dir, 4)
+            cons_peg.insert(cur_pos);
+            for (int dir : state.main_move.move_dir)
             {
-                if (state.board.can_move(cur_pos, dir) // toriaezu
-                    && (state.main_move.move_dir.empty() || dir != (state.main_move.move_dir.back() + 2) % 4))
-                {
-                    State nstate = state;
-                    nstate.main_move.move_dir.push_back(dir);
-                    nstate.board.move(cur_pos, dir);
+                cur_pos += DIFF[dir];
+                cons_peg.insert(cur_pos);
+                cur_pos += DIFF[dir];
+                cons_empty.insert(cur_pos);
+            }
 
-                    q[qi + 1].push_back(nstate);
+            rep(main_dir, 4)
+            {
+                if (state.board.in(cur_pos + 2 * DIFF[main_dir]) && !cons_peg.count(cur_pos + DIFF[main_dir]))
+                {
+                    if (state.board.match(cur_pos, main_dir, true, false))
+                    {
+                        State nstate = state;
+                        nstate.main_move.move_dir.push_back(main_dir);
+                        q[qi + 1].push_back(nstate);
+                    }
+                    else if (state.board.match(cur_pos, main_dir, {false, true, true})
+                            && !cons_peg.count(cur_pos + 2 * DIFF[main_dir])
+                            && !cons_peg.count(cur_pos + 3 * DIFF[main_dir])
+                            )
+                    {
+                        State nstate = state;
+                        nstate.board.move(cur_pos + 3 * DIFF[main_dir], (main_dir + 2) % 4);
+                        nstate.prepare_moves.push_back(Move(cur_pos + 3 * DIFF[main_dir], {(main_dir + 2) % 4}));
+                        nstate.main_move.move_dir.push_back(main_dir);
+                        q[qi + 2].push_back(nstate);
+                    }
                 }
             }
         }
     }
 
-    for (int qi = start_board.size() * start_board.size(); qi > 0; --qi)
+    int best_score = 0;
+    vector<Move> best_moves;
+    rep(qi, start_board.size() * start_board.size())
     {
-        if (q[qi].size())
+        for (auto& state : q[qi])
         {
-            return {q[qi][0].main_move};
+            int score = 0;
+            Board board = start_board;
+            for (auto& move : state.prepare_moves)
+                score += board.move_score(move);
+            score += board.move_score(state.main_move);
+            if (score > best_score)
+            {
+                best_score = score;
+                best_moves = state.prepare_moves;
+                best_moves.push_back(state.main_move);
+            }
         }
     }
-    return {};
+    return best_moves;
 }
 
 vector<Move> solve(Board board)
