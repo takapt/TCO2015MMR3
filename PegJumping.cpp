@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 10.0;
+const double G_TL_SEC = 1919810.0;
 #else
 const double G_TL_SEC = 15.0;
 #endif
