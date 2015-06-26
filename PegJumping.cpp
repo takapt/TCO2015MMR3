@@ -71,38 +71,61 @@ const int DY[] = { 1, 0, -1, 0 };
 const string S_DIR = "DRUL";
 
 
-int getms_calls = 0;
+
+
+ull rdtsc()
+{
+#ifdef __amd64
+    ull a, d;
+    __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d)); 
+    return (d<<32) | a;
+#else
+    ull x;
+    __asm__ volatile ("rdtsc" : "=A" (x)); 
+    return x;
+#endif
+}
+#ifdef LOCAL
+const double CYCLES_PER_SEC = 3.30198e9;
+#else
+const double CYCLES_PER_SEC = 2.5e9;
+#endif
+double get_absolute_sec()
+{
+    return (double)rdtsc() / CYCLES_PER_SEC;
+}
 #ifdef _MSC_VER
 #include <Windows.h>
+    double get_ms() { return (double)GetTickCount64() / 1000; }
 #else
 #include <sys/time.h>
+    double get_ms() { struct timeval t; gettimeofday(&t, NULL); return (double)t.tv_sec * 1000 + (double)t.tv_usec / 1000; }
 #endif
+
+#define USE_RDTSC
 class Timer
 {
-    typedef double time_type;
-    typedef unsigned int skip_type;
-
 private:
-    time_type start_time;
-    time_type elapsed;
+    double start_time;
+    double elapsed;
 
-#ifdef _MSC_VER
-    time_type get_ms() { return (time_type)GetTickCount64() / 1000; }
+#ifdef USE_RDTSC
+    double get_sec() { return get_absolute_sec(); }
 #else
-    time_type get_ms() { ++getms_calls; struct timeval t; gettimeofday(&t, NULL); return (time_type)t.tv_sec * 1000 + (time_type)t.tv_usec / 1000; }
-//     time_type get_ms() { ++getms_calls; return 0; }
+    double get_sec() { return get_ms() / 1000; }
 #endif
 
 public:
     Timer() {}
 
-    void start() { start_time = get_ms(); }
-    time_type get_elapsed() { return elapsed = get_ms() - start_time; }
+    void start() { start_time = get_sec(); }
+    double get_elapsed() { return elapsed = get_sec() - start_time; }
 };
+
 #ifdef LOCAL
-const double G_TL = 100.0 * 1000.0;
+const double G_TL_SEC = 10.0;
 #else
-const double G_TL = 15.0 * 1000.0;
+const double G_TL_SEC = 15.0;
 #endif
 Timer g_timer;
 
@@ -414,7 +437,6 @@ private:
 };
 
 
-// return: good moves
 vector<Move> search_move(const Board& start_board, const Pos& start)
 {
     assert(start_board.at(start));
@@ -514,14 +536,14 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
 vector<Move> solve(Board board)
 {
     vector<Move> res_moves;
-    for (;;)
+    while (g_timer.get_elapsed() < G_TL_SEC * 0.95)
     {
-        if (g_timer.get_elapsed() > G_TL * 0.9)
-            break;
-
         vector<Move> best;
         rep(y, board.size()) rep(x, board.size())
         {
+            if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
+                goto TLE;
+
             if (board.at(x, y))
             {
                 auto moves = search_move(board, Pos(x, y));
@@ -529,13 +551,12 @@ vector<Move> solve(Board board)
                     best = moves;
             }
         }
+TLE:
         if (best.empty())
             break;
 
         for (auto& move : best)
-        {
             board.move(move);
-        }
 
         res_moves.insert(res_moves.end(), all(best));
     }

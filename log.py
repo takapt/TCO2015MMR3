@@ -35,7 +35,7 @@ def get_score(seed):
 def single(seeds):
     for seed in seeds:
         result = get_score(seed)
-        print('{:5d} {:5d} {:.3f}'.format(seed, result['score'], result['time']))
+        print('{:5d} {:8d} {:.3f}'.format(seed, result['score'], result['time']))
         sys.stdout.flush()
 
 def multi(seeds):
@@ -44,7 +44,7 @@ def multi(seeds):
     results = pool.map(get_score, seeds)
     for result in results:
         seed = result['seed']
-        print('{:5d} {:5d} {:.3f}'.format(seed, result['score'], result['time']))
+        print('{:5d} {:8d} {:.3f}'.format(seed, result['score'], result['time']))
         sys.stdout.flush()
 
 try:
