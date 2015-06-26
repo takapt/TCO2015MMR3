@@ -99,6 +99,12 @@ public:
     void start() { start_time = get_ms(); }
     time_type get_elapsed() { return elapsed = get_ms() - start_time; }
 };
+#ifdef LOCAL
+const double G_TL = 100.0 * 1000.0;
+#else
+const double G_TL = 15.0 * 1000.0;
+#endif
+Timer g_timer;
 
 class Random
 {
@@ -244,60 +250,8 @@ ostream& operator<<(ostream& os, const Pos& pos)
     os << "(" << pos.x << ", " << pos.y << ")";
     return os;
 }
+const Pos DIFF[] = {Pos(DX[0], DY[0]), Pos(DX[1], DY[1]), Pos(DX[2], DY[2]), Pos(DX[3], DY[3])};
 
-
-class Board
-{
-public:
-    Board(const vector<int>& peg_value, const vector<string>& board)
-        : n(board.size())
-    {
-        rep(y, n) rep(x, n)
-            a[y][x] = board[y][x] == '.' ? 0 : peg_value[board[y][x] - '0'];
-    }
-
-    bool in(int x, int y) const
-    {
-        return 0 <= x && x < n && 0 <= y && y < n;
-    }
-
-    bool can_move(int x, int y, int dir) const
-    {
-        assert(in(x, y));
-        return at(x, y)
-            && in(x + DX[dir], y + DY[dir]) && at(x + DX[dir], y + DY[dir])
-            && in(x + 2 * DX[dir], y + 2 * DY[dir]) && !at(x + 2 * DX[dir], y + 2 * DY[dir]);
-    }
-
-    void move(int x, int y, int dir)
-    {
-        assert(can_move(x, y, dir));
-        set(x + 2 * DX[dir], y + 2 * DY[dir], at(x, y));
-        set(x, y, 0);
-        set(x + DX[dir], y + DY[dir], 0);
-    }
-
-    void set(int x, int y, int peg)
-    {
-        assert(in(x, y));
-        a[y][x] = peg;
-    }
-
-    int at(int x, int y) const
-    {
-        assert(in(x, y));
-        return a[y][x];
-    }
-
-    int size() const
-    {
-        return n;
-    }
-
-private:
-    int n;
-    int a[64][64];
-};
 
 struct Move
 {
@@ -314,9 +268,173 @@ struct Move
         return ss.str();
     }
 };
+class Board
+{
+public:
+    Board(){}
+    Board(const vector<int>& peg_value, const vector<string>& board)
+        : n(board.size())
+    {
+        rep(y, n) rep(x, n)
+            a[y][x] = board[y][x] == '.' ? 0 : peg_value[board[y][x] - '0'];
+    }
+
+    bool in(int x, int y) const
+    {
+        return 0 <= x && x < n && 0 <= y && y < n;
+    }
+    bool in(const Pos& pos) const
+    {
+        return in(pos.x, pos.y);
+    }
+
+    bool can_move(int x, int y, int dir) const
+    {
+        assert(in(x, y));
+        return at(x, y)
+            && in(x + DX[dir], y + DY[dir]) && at(x + DX[dir], y + DY[dir])
+            && in(x + 2 * DX[dir], y + 2 * DY[dir]) && !at(x + 2 * DX[dir], y + 2 * DY[dir]);
+    }
+    bool can_move(const Pos& pos, int dir) const
+    {
+        return can_move(pos.x, pos.y, dir);
+    }
+
+    void move(int x, int y, int dir)
+    {
+        assert(can_move(x, y, dir));
+        set(x + 2 * DX[dir], y + 2 * DY[dir], at(x, y));
+        set(x, y, 0);
+        set(x + DX[dir], y + DY[dir], 0);
+    }
+    void move(const Pos& pos, int dir)
+    {
+        move(pos.x, pos.y, dir);
+    }
+
+    void move(const Move& m)
+    {
+        Pos p = m.start;
+        for (int dir : m.move_dir)
+        {
+            move(p, dir);
+            p += 2 * DIFF[dir];
+        }
+    }
+
+    int at(int x, int y) const
+    {
+        assert(in(x, y));
+        return a[y][x];
+    }
+    int at(const Pos& pos) const
+    {
+        return at(pos.x, pos.y);
+    }
+
+    int size() const
+    {
+        return n;
+    }
+
+private:
+    void set(int x, int y, int peg)
+    {
+        assert(in(x, y));
+        a[y][x] = peg;
+    }
+    void set(const Pos& pos, int peg)
+    {
+        set(pos.x, pos.y, peg);
+    }
+
+    int n;
+    int a[64][64];
+};
+
+
+// return: good moves
+vector<Move> search_move(const Board& start_board, const Pos& start)
+{
+    assert(start_board.at(start));
+
+    struct State
+    {
+        Board board;
+        Move main_move;
+        vector<Move> prepare_moves;
+    };
+
+    vector<State> q[64 * 64];
+    State start_state;
+    start_state.board = start_board;
+    start_state.main_move.start = start;
+    q[0].push_back(start_state);
+    rep(qi, start_board.size() * start_board.size())
+    {
+        while (q[qi].size() > 2)
+            q[qi].pop_back();
+
+        for (auto& state : q[qi])
+        {
+            Pos cur_pos = state.main_move.start;
+            for (auto& dir : state.main_move.move_dir)
+                cur_pos += 2 * DIFF[dir];
+
+            rep(dir, 4)
+            {
+                if (state.board.can_move(cur_pos, dir) // toriaezu
+                    && (state.main_move.move_dir.empty() || dir != (state.main_move.move_dir.back() + 2) % 4))
+                {
+                    State nstate = state;
+                    nstate.main_move.move_dir.push_back(dir);
+                    nstate.board.move(cur_pos, dir);
+
+                    q[qi + 1].push_back(nstate);
+                }
+            }
+        }
+    }
+
+    for (int qi = start_board.size() * start_board.size(); qi > 0; --qi)
+    {
+        if (q[qi].size())
+        {
+            return {q[qi][0].main_move};
+        }
+    }
+    return {};
+}
 
 vector<Move> solve(Board board)
 {
+    vector<Move> res_moves;
+    for (;;)
+    {
+        if (g_timer.get_elapsed() > G_TL * 0.9)
+            break;
+
+        vector<Move> best;
+        rep(y, board.size()) rep(x, board.size())
+        {
+            if (board.at(x, y))
+            {
+                auto moves = search_move(board, Pos(x, y));
+                if (!moves.empty() && (best.empty() || moves.back().move_dir.size() > best.back().move_dir.size()))
+                    best = moves;
+            }
+        }
+        if (best.empty())
+            break;
+
+        for (auto& move : best)
+        {
+            board.move(move);
+        }
+
+        res_moves.insert(res_moves.end(), all(best));
+    }
+    return res_moves;
 }
 
 class PegJumping
@@ -324,22 +442,19 @@ class PegJumping
 public:
     vector<string> getMoves(const vector<int>& peg_value, const vector<string>& board)
     {
+        g_timer.start();
+
         vector<string> res;
         for (auto& move : solve(Board(peg_value, board)))
             res.push_back(move.to_res());
+
+        dump(g_timer.get_elapsed());
         return res;
     }
 };
 
 
 #ifdef LOCAL
-const double G_TL = 20.0 * 1000.0;
-#else
-const double G_TL = 15.0 * 1000.0;
-#endif
-Timer g_timer;
-
-
 int main()
 {
     int m;
@@ -358,3 +473,4 @@ int main()
         cout << s << endl;
     cout.flush();
 }
+#endif
