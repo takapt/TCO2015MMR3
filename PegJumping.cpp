@@ -535,6 +535,7 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
 
 vector<Move> solve(Board board)
 {
+    int score = 0;
     vector<Move> res_moves;
     while (g_timer.get_elapsed() < G_TL_SEC * 0.95)
     {
@@ -555,8 +556,11 @@ TLE:
         if (best.empty())
             break;
 
+        int s = 0;
         for (auto& move : best)
-            board.move(move);
+            s += board.move_score(move);
+        score += s;
+        fprintf(stderr, "%6d (+%6d)\n", score, s);
 
         res_moves.insert(res_moves.end(), all(best));
     }
