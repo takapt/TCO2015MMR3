@@ -28,6 +28,8 @@ def get_score(seed):
         raise "exit"
 
     score = int(output.split()[-1])
+    if score == -1:
+        score = 0
     exe_time = time.time() - start
 
     return {'seed': seed, 'score': score, 'time': exe_time}
@@ -35,7 +37,7 @@ def get_score(seed):
 def single(seeds):
     for seed in seeds:
         result = get_score(seed)
-        print('{:5d} {:8d} {:.3f}'.format(seed, result['score'], result['time']))
+        print('{:5d} {:10d} {:.3f}'.format(seed, result['score'], result['time']))
         sys.stdout.flush()
 
 def multi(seeds):
@@ -44,7 +46,7 @@ def multi(seeds):
     results = pool.map(get_score, seeds)
     for result in results:
         seed = result['seed']
-        print('{:5d} {:8d} {:.3f}'.format(seed, result['score'], result['time']))
+        print('{:5d} {:10d} {:.3f}'.format(seed, result['score'], result['time']))
         sys.stdout.flush()
 
 try:

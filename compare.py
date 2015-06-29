@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
 import sys
 
@@ -20,7 +20,7 @@ for seed in seeds:
     ratio = y / x
     sum_ratio += ratio
 
-    print('{:>5} {:>8} {:>8} {:>7.3f}'.format(seed, x, y, ratio))
+    print('{:>5} {:>10} {:>10} {:>7.3f}'.format(seed, x, y, ratio))
 
 total_ratio = sum_ratio / len(seeds)
 print('total_ratio: {}'.format(total_ratio))
