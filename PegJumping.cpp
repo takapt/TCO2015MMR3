@@ -523,6 +523,7 @@ class Pool
 public:
     Pool()
     {
+        max_p = 0;
     }
 
     void init()
@@ -533,15 +534,19 @@ public:
     T* get()
     {
         assert(pointer < SIZE);
+        upmax(max_p, pointer + 1);
         return &data[pointer++];
     }
     T* get(const T& a)
     {
         assert(pointer < SIZE);
+        upmax(max_p, pointer + 1);
         data[pointer] = a;
         return &data[pointer++];
     }
 
+
+    int max_p;
 private:
     T data[SIZE];
     int pointer;
@@ -572,10 +577,15 @@ private:
 };
 
 
-Pool<Node<int>, 20000> main_move_dir_pool;
-Pool<Node<MoveUnit>, 20000> move_unit_pool;
-Pool<Node<MoveUnit>, 20000> move_stack_pool;
-Pool<Node<pair<Pos, bool>>, 20000> change_need_stack_pool;
+const int DONE_Q_SIZE = 5;
+const int SEARCH_Q_SIZE = 50;
+
+const int BASE_SIZE = (DONE_Q_SIZE + SEARCH_Q_SIZE) * 60 * 60;
+
+Pool<Node<int>, BASE_SIZE * 4> main_move_dir_pool;
+Pool<Node<MoveUnit>, BASE_SIZE * 4> move_unit_pool;
+Pool<Node<MoveUnit>, BASE_SIZE * 6> move_stack_pool;
+Pool<Node<pair<Pos, bool>>, BASE_SIZE * 6 * 4> change_need_stack_pool;
 
 struct State
 {
@@ -834,8 +844,6 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
     move_stack_pool.init();
     change_need_stack_pool.init();
 
-    const int DONE_Q_SIZE = 5;
-    const int SEARCH_Q_SIZE = 10;
     static vector<State> done_q[64 * 64];
     static vector<State> search_q[64 * 64];
 
@@ -1001,6 +1009,10 @@ public:
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
+        dump(main_move_dir_pool.max_p);
+        dump(move_unit_pool.max_p);
+        dump(move_stack_pool.max_p);
+        dump(change_need_stack_pool.max_p);
         return res;
     }
 };
