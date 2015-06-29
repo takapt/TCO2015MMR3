@@ -8,6 +8,8 @@ def get_scores(filename):
         s = line.split()
         seed = int(s[0])
         score = int(s[1])
+        if score == 0:
+            continue
         scores[seed] = score
     return scores
 
@@ -24,4 +26,3 @@ for seed in seeds:
 
 total_ratio = sum_ratio / len(seeds)
 print('total_ratio: {}'.format(total_ratio))
-

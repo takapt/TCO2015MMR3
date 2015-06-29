@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 15;
+const double G_TL_SEC = 1e9;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -537,7 +537,7 @@ struct State
                 State nstate = *this;
                 nstate.move_stack.push(make_pair(cur_pos, dir));
 
-                // TODO: スタック順が両パターンいるか？
+                // REVIEW: スタック順が両パターンいるか？
 
                 if (!board.peg(nextnext))
                     nstate.fixed.insert(nextnext);
@@ -678,6 +678,7 @@ struct State
             assert(board.peg(main_move.start));
             prepare_moves.push_back(Move(p, {dir}));
 
+            // REVIEW: あやしい
             rep(i, 3)
                 fixed.erase(p + i * DIFF[dir]);
             rep(i, 3)
@@ -730,8 +731,8 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
 {
     assert(start_board.at(start));
 
-    const int DONE_Q_SIZE = 5;
-    const int SEARCH_Q_SIZE = 50;
+    const int DONE_Q_SIZE = 5 * 5;
+    const int SEARCH_Q_SIZE = 50 * 5;
     static vector<State> done_q[64 * 64];
     static vector<State> search_q[64 * 64];
     static vector<vector<Move>> prepare_moves[64 * 64];
@@ -920,32 +921,6 @@ public:
 
 
 #ifdef LOCAL
-void test()
-{
-    if (false)
-    {
-        Board board = Board({1},
-                {
-                "..0",
-                "000",
-                "...",
-                });
-        assert(solve(board).size() == 2);
-    }
-    if (false)
-    {
-        Board board = Board({1},
-                {
-                ".....",
-                "0.000",
-                ".....",
-                ".....",
-                ".....",
-                });
-        assert(solve(board).size() == 2);
-    }
-}
-
 int main()
 {
     int m;

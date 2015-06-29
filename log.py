@@ -54,5 +54,3 @@ try:
     multi(range(1, 100))
 finally:
     os.remove(copied_exe_path)
-
-
