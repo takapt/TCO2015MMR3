@@ -310,7 +310,6 @@ public:
     Board(const vector<int>& peg_value, const vector<string>& board)
         : n(board.size())
     {
-        clr(a, 0);
         rep(y, n) rep(x, n)
             set(x, y, board[y][x] == '.' ? 0 : peg_value[board[y][x] - '0']);
     }
@@ -404,7 +403,6 @@ public:
     int at(int x, int y) const
     {
         assert(in(x, y));
-//         return a[y][x];
         return (a[y][x / 16] >> (4 * (x % 16))) & 0xf;
     }
     int at(const Pos& pos) const
@@ -448,7 +446,6 @@ private:
     void set(int x, int y, int peg)
     {
         assert(in(x, y));
-//         a[y][x] = peg;
         const int shift = 4 * (x % 16);
         a[y][x / 16] = (x % 16 == 15 ? 0 : ((a[y][x / 16] >> (shift + 4)) << (shift + 4))) | (a[y][x / 16] & ((1ull << shift) - 1)) | ((ull)peg << shift);
     }
@@ -458,8 +455,96 @@ private:
     }
 
     int n;
-//     int a[64][64];
     ull a[60][4];
+};
+
+struct MoveUnit
+{
+    Pos pos;
+    int dir;
+    MoveUnit(const Pos& pos, int dir)
+        : pos(pos), dir(dir)
+    {
+    }
+    MoveUnit()
+#ifndef NDEBUG
+        : pos(Pos(-1919810, -114514)), dir(-101019)
+#endif
+    {
+    }
+};
+
+template <typename T>
+struct Node
+{
+    T val;
+    Node* prev;
+
+    Node()
+#ifndef NDEBUG
+        :prev(nullptr)
+#endif
+    {
+    }
+
+    Node(const T& val, Node* prev)
+        : val(val), prev(prev), size(prev == nullptr ? 1 : prev->size + 1)
+    {
+    }
+    Node(const T& val)
+        : val(val), prev(nullptr), size(1)
+    {
+    }
+    Node(Node* prev)
+        : prev(prev), size(prev == nullptr ? 1 : prev->size + 1)
+    {
+    }
+
+    vector<T> list() const
+    {
+        vector<T> res;
+        for (const Node<T>* node = this; node != nullptr; node = node->prev)
+            res.push_back(node->val);
+        reverse(all(res));
+        return res;
+    }
+
+    int size;
+};
+template <typename T>
+int size(const Node<T>* node)
+{
+    return node == nullptr ? 0 : node->size;
+}
+
+template <typename T, int SIZE>
+class Pool
+{
+public:
+    Pool()
+    {
+    }
+
+    void init()
+    {
+        pointer = 0;
+    }
+
+    T* get()
+    {
+        assert(pointer < SIZE);
+        return &data[pointer++];
+    }
+    T* get(const T& a)
+    {
+        assert(pointer < SIZE);
+        data[pointer] = a;
+        return &data[pointer++];
+    }
+
+private:
+    T data[SIZE];
+    int pointer;
 };
 
 
@@ -485,46 +570,60 @@ private:
     }
     bitset<64 * 60> f;
 };
+
+
+Pool<Node<int>, 20000> main_move_dir_pool;
+Pool<Node<MoveUnit>, 20000> move_unit_pool;
+Pool<Node<MoveUnit>, 20000> move_stack_pool;
+Pool<Node<pair<Pos, bool>>, 20000> change_need_stack_pool;
+
 struct State
 {
     Board board;
-    Move main_move;
+    Pos start_pos;
 
-//     set<Pos> fixed;
     BitBoard fixed;
     Pos cur_pos;
 
-    stack<pair<Pos, int>> move_stack;
-    stack<pair<Pos, bool>> change_need_stack;
+    Node<MoveUnit>* move_stack;
+    Node<pair<Pos, bool>>* change_need_stack;
+
+
+    Node<int>* main_move_dir;
+    Node<MoveUnit>* prepare_moves;
+
+    State()
+        :
+            main_move_dir(nullptr),
+            prepare_moves(nullptr),
+            move_stack(nullptr),
+            change_need_stack(nullptr)
+    {
+    }
 
     void add_main_move(int dir)
     {
-        assert(main_move.move_dir.empty() || !board.peg(cur_pos));
+        assert(main_move_dir == nullptr || !board.peg(cur_pos));
         assert(board.peg(cur_pos + DIFF[dir]));
         assert(!board.peg(cur_pos + 2 * DIFF[dir]));
 
-        main_move.move_dir.push_back(dir);
+        main_move_dir = main_move_dir_pool.get(Node<int>(dir, main_move_dir));
         fixed.insert(cur_pos + DIFF[dir]);
         fixed.insert(cur_pos + 2 * DIFF[dir]);
         cur_pos += 2 * DIFF[dir]; 
-
-#ifndef NDEBUG
-        Board b = board;
-        assert(b.move_score(main_move));
-#endif
     }
 
     bool no_prepare_search() const
     {
-        return move_stack.empty();
+        return size(move_stack) == 0;
     }
 
     vector<State> next_main_move_states() const
     {
         assert(no_prepare_search());
-        assert(move_stack.empty());
-        assert(change_need_stack.empty());
-        assert(main_move.move_dir.empty() || !board.peg(cur_pos));
+        assert(size(move_stack) == 0);
+        assert(size(change_need_stack) == 0);
+        assert(main_move_dir == nullptr || !board.peg(cur_pos));
 
         vector<State> next_states;
 
@@ -535,19 +634,19 @@ struct State
             if (board.in(nextnext) && !fixed.count(next))
             {
                 State nstate = *this;
-                nstate.move_stack.push(make_pair(cur_pos, dir));
+                nstate.move_stack = move_stack_pool.get(Node<MoveUnit>(MoveUnit(cur_pos, dir), nstate.move_stack));
 
                 // REVIEW: スタック順が両パターンいるか？
 
                 if (!board.peg(nextnext))
                     nstate.fixed.insert(nextnext);
                 else
-                    nstate.change_need_stack.push(make_pair(nextnext, false));
+                    nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(nextnext, false), nstate.change_need_stack));
 
                 if (board.peg(next))
                     nstate.fixed.insert(next);
                 else
-                    nstate.change_need_stack.push(make_pair(next, true));
+                    nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(next, true), nstate.change_need_stack));
 
                 next_states.push_back(nstate);
             }
@@ -577,17 +676,17 @@ struct State
                 {
                     State nstate = *this;
                     nstate.fixed.insert(pos);
-                    nstate.move_stack.push(make_pair(pos, dir));
+                    nstate.move_stack = move_stack_pool.get(Node<MoveUnit>(MoveUnit(pos, dir), nstate.move_stack));
 
                     if (board.peg(a))
                         nstate.fixed.insert(a);
                     else
-                        nstate.change_need_stack.push(make_pair(a, true));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(a, true), nstate.change_need_stack));
 
                     if (!board.peg(b))
                         nstate.fixed.insert(b);
                     else
-                        nstate.change_need_stack.push(make_pair(b, false));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
                     next_states.push_back(nstate);
                 }
@@ -603,17 +702,17 @@ struct State
                 {
                     State nstate = *this;
                     nstate.fixed.insert(pos);
-                    nstate.move_stack.push(make_pair(a, dir));
+                    nstate.move_stack = move_stack_pool.get(Node<MoveUnit>(MoveUnit(a, dir), nstate.move_stack));
 
                     if (board.peg(a))
                         nstate.fixed.insert(a);
                     else
-                        nstate.change_need_stack.push(make_pair(a, true));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(a, true), nstate.change_need_stack));
 
                     if (!board.peg(b))
                         nstate.fixed.insert(b);
                     else
-                        nstate.change_need_stack.push(make_pair(b, false));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
                     next_states.push_back(nstate);
                 }
@@ -633,17 +732,17 @@ struct State
                 {
                     State nstate = *this;
                     nstate.fixed.insert(pos);
-                    nstate.move_stack.push(make_pair(b, (dir + 2) % 4));
+                    nstate.move_stack = move_stack_pool.get(Node<MoveUnit>(MoveUnit(b, (dir + 2) % 4), nstate.move_stack));
 
                     if (board.peg(a))
                         nstate.fixed.insert(a);
                     else
-                        nstate.change_need_stack.push(make_pair(a, true));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(a, true), nstate.change_need_stack));
 
                     if (board.peg(b))
                         nstate.fixed.insert(b);
                     else
-                        nstate.change_need_stack.push(make_pair(b, true));
+                        nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, true), nstate.change_need_stack));
 
                     next_states.push_back(nstate);
                 }
@@ -658,66 +757,51 @@ struct State
         if (no_prepare_search())
             return next_main_move_states();
         else
-            return next_states_for_change(change_need_stack.top().first);
+            return next_states_for_change(change_need_stack->val.first);
     }
 
-    vector<Move> pop_stack()
+    void pop_stack()
     {
-        vector<Move> prepare_moves;
+        while (size(change_need_stack) && board.peg(change_need_stack->val.first) == change_need_stack->val.second)
+            change_need_stack = change_need_stack->prev;
 
-        while (!change_need_stack.empty() && board.peg(change_need_stack.top().first) == change_need_stack.top().second)
-            change_need_stack.pop();
-
-        while (move_stack.size() > 1 && board.can_move(move_stack.top().first, move_stack.top().second))
+        while (size(move_stack) > 1 && board.can_move(move_stack->val.pos, move_stack->val.dir))
         {
-            Pos p = move_stack.top().first;
-            int dir = move_stack.top().second;
-            move_stack.pop();
+            Pos p = move_stack->val.pos;
+            int dir = move_stack->val.dir;
+            move_stack = move_stack->prev;
 
             board.move(p, dir);
-            assert(board.peg(main_move.start));
-            prepare_moves.push_back(Move(p, {dir}));
+            assert(board.peg(start_pos));
+            prepare_moves = move_unit_pool.get(Node<MoveUnit>(MoveUnit(p, dir), prepare_moves));
 
             // REVIEW: あやしい
             rep(i, 3)
                 fixed.erase(p + i * DIFF[dir]);
             rep(i, 3)
-                fixed.insert(move_stack.top().first + i * DIFF[move_stack.top().second]);
+                fixed.insert(move_stack->val.pos + i * DIFF[move_stack->val.dir]);
 
-            while (!change_need_stack.empty() && board.peg(change_need_stack.top().first) == change_need_stack.top().second)
-                change_need_stack.pop();
+            while (size(change_need_stack) && board.peg(change_need_stack->val.first) == change_need_stack->val.second)
+                change_need_stack = change_need_stack->prev;
         }
 
-        if (change_need_stack.empty() && move_stack.size() == 1)
+        if (size(change_need_stack) == 0 && size(move_stack) == 1)
         {
-            Pos p = move_stack.top().first;
-            int dir = move_stack.top().second;
-            move_stack.pop();
+            Pos p = move_stack->val.pos;
+            int dir = move_stack->val.dir;
+            move_stack = move_stack->prev;
 
-            assert(main_move.move_dir.empty() || !board.peg(p));
+            assert(main_move_dir == nullptr || !board.peg(p));
             assert(board.peg(p + DIFF[dir]));
             assert(!board.peg(p + 2 * DIFF[dir]));
 
             add_main_move(dir);
         }
-
-        return prepare_moves;
     }
 
     ll score() const
     {
-        ll s = main_move.move_dir.size() * main_move.move_dir.size();
-
-//         for (auto& m : prepare_moves)
-//             s -= m.move_dir.size();
-
-        s -= move_stack.size();
-
-        rep(i, (int)main_move.move_dir.size() - 1)
-            if (main_move.move_dir[i] != main_move.move_dir[i + 1])
-                s -= 3;
-
-        return s;
+        return size(main_move_dir);
     }
 
     bool operator<(const State& other) const
@@ -725,25 +809,42 @@ struct State
         return score() > other.score();
     }
 
-    int prev_index;
+    vector<Move> make_prepare_moves() const
+    {
+        vector<Move> moves;
+        for (Node<MoveUnit>* node = prepare_moves; node != nullptr; node = node->prev)
+            moves.push_back(Move(node->val.pos, {node->val.dir}));
+        reverse(all(moves));
+        return moves;
+    }
+
+    Move make_main_move() const
+    {
+        return Move(start_pos, main_move_dir->list());
+    }
 };
+
+
 vector<Move> search_move(const Board& start_board, const Pos& start)
 {
     assert(start_board.at(start));
 
-    const int DONE_Q_SIZE = 5 * 5;
-    const int SEARCH_Q_SIZE = 50 * 5;
+    move_unit_pool.init();
+    main_move_dir_pool.init();
+    move_stack_pool.init();
+    change_need_stack_pool.init();
+
+    const int DONE_Q_SIZE = 5;
+    const int SEARCH_Q_SIZE = 10;
     static vector<State> done_q[64 * 64];
     static vector<State> search_q[64 * 64];
-    static vector<vector<Move>> prepare_moves[64 * 64];
 
     done_q[0].clear();
     search_q[0].clear();
-    prepare_moves[0].clear();
 
     State start_state;
     start_state.board = start_board;
-    start_state.main_move.start = start_state.cur_pos = start;
+    start_state.cur_pos = start_state.start_pos = start;
     start_state.fixed.insert(start);
     done_q[0].push_back(start_state);
 
@@ -755,34 +856,21 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
         if (g_timer.get_elapsed() > G_TL_SEC * 0.9)
             break;
 
-//         if (search_q[qi].size() + done_q[qi].size())
-//             fprintf(stderr, "%3d: %d %d\n", qi, (int)search_q[qi].size(), (int)done_q[qi].size());
-
-//         sort(all(done_q[qi]));
-//         while (done_q[qi].size() > 10)
-//             done_q[qi].pop_back();
-//         sort(all(search_q[qi]));
-//         while (search_q[qi].size() > 50)
-//             search_q[qi].pop_back();
-
         done_q[qi + 1].clear();
         search_q[qi + 1].clear();
-        prepare_moves[qi + 1].clear();
 
         rep(si, search_q[qi].size())
         {
             State& state = search_q[qi][si];
-
-            prepare_moves[qi].push_back(state.pop_stack());
+            state.pop_stack();
 
             if (state.no_prepare_search())
             {
                 done_q[qi].push_back(state);
-                done_q[qi].back().prev_index = si;
             }
             else
             {
-                if (state.move_stack.size() < 3)
+                if (size(state.move_stack) < 3)
                 {
                     vector<State> next_states = state.next_states();
 
@@ -791,11 +879,8 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
                     {
                         if (q.size() < SEARCH_Q_SIZE || s.score() > q.front().score())
                         {
-                            s.prev_index = si;
-
                             q.push_back(s);
                             push_heap(all(q));
-//
                             if (q.size() > SEARCH_Q_SIZE)
                             {
                                 pop_heap(all(q));
@@ -810,10 +895,9 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
         for (const State& state : done_q[qi])
         {
             assert(state.no_prepare_search());
-            assert(state.move_stack.empty());
+            assert(size(state.move_stack) == 0);
 
             vector<State> next_states = state.next_states();
-//             search_q[qi + 1].insert(search_q[qi + 1].end(), all(next_states));
             auto& q = search_q[qi + 1];
             for (auto& s : next_states)
             {
@@ -821,7 +905,6 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
                 {
                     q.push_back(s);
                     push_heap(all(q));
-                    //
                     if (q.size() > SEARCH_Q_SIZE)
                     {
                         pop_heap(all(q));
@@ -841,24 +924,20 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
         {
             assert(state.no_prepare_search());
 
-            vector<Move> pre_moves;
-            for (int i = qi, si = state.prev_index; i > 0; --i)
-            {
-                pre_moves.insert(pre_moves.end(), rall(prepare_moves[i][si]));
-                si = search_q[i][si].prev_index;
-            }
-            reverse(all(pre_moves));
+            vector<Move> prepare_moves = state.make_prepare_moves();
 
             int score = 0;
             Board board = start_board;
-            for (auto& move : pre_moves)
+            for (auto& move : prepare_moves)
                 score += board.move_score(move);
-            score += board.move_score(state.main_move);
+
+            Move main_move = state.make_main_move();
+            score += board.move_score(main_move);
             if (score > best_score)
             {
                 best_score = score;
-                best_moves = pre_moves;
-                best_moves.push_back(state.main_move);
+                best_moves = prepare_moves;
+                best_moves.push_back(main_move);
             }
         }
     }
@@ -871,6 +950,7 @@ vector<Move> solve(Board board)
     vector<Move> res_moves;
     while (g_timer.get_elapsed() < G_TL_SEC * 0.95)
     {
+        int best_score = 0;
         vector<Move> best;
         rep(y, board.size()) rep(x, board.size())
         {
@@ -880,11 +960,17 @@ vector<Move> solve(Board board)
             if (board.at(x, y))
             {
                 auto moves = search_move(board, Pos(x, y));
-                if (!moves.empty() && (best.empty() || moves.back().move_dir.size() > best.back().move_dir.size()))
+                if (!moves.empty())
                 {
-//                     dump(Pos(x, y));
-                    best = moves;
-//                     dump(moves.back().move_dir.size());
+                    Board b = board;
+                    int s = 0;
+                    for (auto& move : moves)
+                        s += b.move_score(move);
+                    if (s > best_score)
+                    {
+                        best_score = s;
+                        best = moves;
+                    }
                 }
             }
         }
