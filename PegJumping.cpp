@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 1500;
+const double G_TL_SEC = 15;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -591,8 +591,8 @@ private:
 };
 
 
-const int DONE_Q_SIZE = 5;
-const int SEARCH_Q_SIZE = 10;
+const int DONE_Q_SIZE = 20;
+const int SEARCH_Q_SIZE = 100;
 
 const int BASE_SIZE = (DONE_Q_SIZE + SEARCH_Q_SIZE) * 60 * 60;
 
