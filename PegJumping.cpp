@@ -591,6 +591,7 @@ private:
 };
 
 
+const int SEARCH_DEPTH = 4;
 const int DONE_Q_SIZE = 20;
 const int SEARCH_Q_SIZE = 100;
 
@@ -917,7 +918,7 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
             }
             else
             {
-                if (size(state->move_stack) < 3)
+                if (size(state->move_stack) < SEARCH_DEPTH)
                 {
                     vector<State*> next_states = state->next_states(state_pool[next]);
 
