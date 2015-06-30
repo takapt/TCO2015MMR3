@@ -591,9 +591,9 @@ private:
 };
 
 
-const int SEARCH_DEPTH = 4;
-const int DONE_Q_SIZE = 20;
-const int SEARCH_Q_SIZE = 100;
+const int SEARCH_DEPTH = 10;
+const int DONE_Q_SIZE = 50;
+const int SEARCH_Q_SIZE = 150;
 
 const int BASE_SIZE = (DONE_Q_SIZE + SEARCH_Q_SIZE) * 60 * 60;
 
@@ -836,7 +836,7 @@ struct State
 
     ll score() const
     {
-        return size(main_move_dir);
+        return size(main_move_dir) * size(main_move_dir) - size(change_need_stack);
     }
 
     bool operator<(const State& other) const
@@ -1060,10 +1060,10 @@ public:
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
-        dump(main_move_dir_pool.max_p);
-        dump(move_unit_pool.max_p);
-        dump(move_stack_pool.max_p);
-        dump(change_need_stack_pool.max_p);
+//         dump(main_move_dir_pool.max_p);
+//         dump(move_unit_pool.max_p);
+//         dump(move_stack_pool.max_p);
+//         dump(change_need_stack_pool.max_p);
         return res;
     }
 };
