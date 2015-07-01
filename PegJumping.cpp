@@ -689,7 +689,8 @@ struct State
         if (fixed.count(pos))
             return {};
 
-        vector<State*> next_states;
+        static vector<State*> next_states;
+        next_states.clear();
 
         if (board.peg(pos))
         {
@@ -899,8 +900,10 @@ vector<Move> search_move(const Board& start_board, const Pos& start)
         const int cur = qi & 1;
         const int next = cur ^ 1;
 
+        if (done_q[cur].size() + search_q[cur].size() == 0)
+            break;
 
-        if (g_timer.get_elapsed() > G_TL_SEC * 0.9)
+        if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
             break;
 
         done_q[next].clear();
@@ -1013,6 +1016,9 @@ vector<Move> solve(Board board)
         vector<Move> best;
         rep(y, board.size()) rep(x, board.size())
         {
+            if (res_moves.empty() && g_timer.get_elapsed() > G_TL_SEC * 0.9)
+                goto TLE;
+
             if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
                 goto TLE;
 
@@ -1029,6 +1035,9 @@ vector<Move> solve(Board board)
                     {
                         best_score = s;
                         best = moves;
+
+//                         if (res_moves.empty())
+//                             fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, s, (int)moves.back().move_dir.size());
                     }
                 }
             }
@@ -1060,10 +1069,6 @@ public:
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
-//         dump(main_move_dir_pool.max_p);
-//         dump(move_unit_pool.max_p);
-//         dump(move_stack_pool.max_p);
-//         dump(change_need_stack_pool.max_p);
         return res;
     }
 };
