@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 15;
+const double G_TL_SEC = 1e9;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -1037,7 +1037,7 @@ vector<Move> solve(Board board)
                         best = moves;
 
 //                         if (res_moves.empty())
-//                             fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, s, (int)moves.back().move_dir.size());
+                            fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, s, (int)moves.back().move_dir.size());
                     }
                 }
             }
@@ -1053,6 +1053,7 @@ TLE:
 //         fprintf(stderr, "%9d (+%9d)\n", score, s);
 
         res_moves.insert(res_moves.end(), all(best));
+        break;
     }
     return res_moves;
 }
