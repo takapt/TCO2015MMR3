@@ -42,7 +42,7 @@ def single(seeds):
 
 def multi(seeds):
     from multiprocessing import Pool
-    pool = Pool(4)
+    pool = Pool(5)
     results = pool.map(get_score, seeds)
     for result in results:
         seed = result['seed']

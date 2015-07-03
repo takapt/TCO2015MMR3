@@ -821,10 +821,12 @@ struct State
 
         if (size(change_need_stack) == 0 && size(move_stack) == 1)
         {
-            Pos p = move_stack->val.pos;
             int dir = move_stack->val.dir;
             move_stack = move_stack->prev;
 
+#ifndef NDEBUG
+            Pos p = move_stack->val.pos;
+#endif
             assert(main_move_dir == nullptr || !board.peg(p));
             assert(board.peg(p + DIFF[dir]));
             assert(!board.peg(p + 2 * DIFF[dir]));
@@ -953,7 +955,8 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             assert(state->no_prepare_search());
             assert(size(state->move_stack) == 0);
 
-            done_moves[qi].push_back(make_pair(state->prepare_moves, state->main_move_dir));
+            if (!extension || state->cur_pos == start)
+                done_moves[qi].push_back(make_pair(state->prepare_moves, state->main_move_dir));
 
             vector<State*> next_states = state->next_states(state_pool[next]);
             auto& q = search_q[next];
@@ -1132,13 +1135,18 @@ vector<Move> solve(Board board)
 {
     int score = 0;
     vector<Move> res_moves;
-    while (g_timer.get_elapsed() < G_TL_SEC * 0.95)
+    for (int main_move_i = 0; g_timer.get_elapsed() < G_TL_SEC * 0.95; ++main_move_i)
     {
+        Timer main_move_timer;
+        main_move_timer.start();
+
         SearchResult best;
         best.score = 0;
         rep(y, board.size()) rep(x, board.size())
         {
-            if (score == 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9)
+            if (main_move_i == 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9)
+                goto TLE;
+            else if (main_move_i > 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9 && main_move_timer.get_elapsed() > G_TL_SEC * 0.02)
                 goto TLE;
 
             if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
@@ -1151,11 +1159,10 @@ vector<Move> solve(Board board)
                 for (;;)
                 {
                     SearchResult extend_res = extend_move(board, res, skip_extend_start);
-                    //                     dump(res.score);
-                    //                     dump(extend_res.score);
                     if (extend_res.score == res.score)
                         break;
-                    //                         fprintf(stderr, "(%2d, %2d): %7d -> %7d\n", x, y, res.score, extend_res.score);
+//                     dump((extend_res.main_move.move_dir.size() - res.main_move.move_dir.size()));
+//                     fprintf(stderr, "(%2d, %2d): %7d -> %7d\n", x, y, res.score, extend_res.score);
                     res = extend_res;
                 }
                 if (res.score > best.score)
@@ -1168,8 +1175,6 @@ vector<Move> solve(Board board)
 TLE:
         if (best.score == 0)
             break;
-
-//         best = extend_move(board, best);
 
         int s = 0;
         for (auto& move : best.prepare_moves)
