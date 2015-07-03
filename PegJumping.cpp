@@ -612,12 +612,11 @@ struct State
     BitBoard fixed;
     Pos cur_pos;
 
-    Node<MoveUnit>* move_stack;
-    Node<pair<Pos, bool>>* change_need_stack;
-
-
     Node<int>* main_move_dir;
     Node<MoveUnit>* prepare_moves;
+
+    Node<MoveUnit>* move_stack;
+    Node<pair<Pos, bool>>* change_need_stack;
 
     State()
         :
@@ -1103,7 +1102,6 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
         bool inserted = false;
         if (best_extend.main_move.start == p)
         {
-            cerr << "hoge" << endl;
             inserted = true;
             move_dir = best_extend.main_move.move_dir;
         }
