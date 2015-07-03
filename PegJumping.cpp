@@ -299,32 +299,6 @@ public:
         return can_move(pos.x, pos.y, dir);
     }
 
-    bool match(int x, int y, int dir, bool next_peg, bool nextnext_peg) const
-    {
-        assert(in(x, y));
-        return in(x + DX[dir], y + DY[dir]) && in(x + 2 * DX[dir], y + 2 * DY[dir])
-            && peg(x + DX[dir], y + DY[dir]) == next_peg && peg(x + 2 * DX[dir], y + 2 * DY[dir]) == nextnext_peg;
-    }
-    bool match(const Pos& pos, int dir, bool next_peg, bool nextnext_peg) const
-    {
-        return match(pos.x, pos.y, dir, next_peg, nextnext_peg);
-    }
-    bool match(int x, int y, int dir, const vector<bool>& peg_pattern) const
-    {
-        rep(i, peg_pattern.size())
-        {
-            x += DX[dir];
-            y += DY[dir];
-            if (!in(x, y) || peg_pattern[i] != peg(x, y))
-                return false;
-        }
-        return true;
-    }
-    bool match(const Pos& pos, int dir, const vector<bool>& peg_pattern) const
-    {
-        return match(pos.x, pos.y, dir, peg_pattern);
-    }
-
     void move(int x, int y, int dir)
     {
         assert(can_move(x, y, dir));
@@ -766,12 +740,13 @@ struct State
 
         if (size(change_need_stack) == 0 && size(move_stack) == 1)
         {
-            int dir = move_stack->val.dir;
-            move_stack = move_stack->prev;
-
 #ifndef NDEBUG
             Pos p = move_stack->val.pos;
 #endif
+
+            int dir = move_stack->val.dir;
+            move_stack = move_stack->prev;
+
             assert(main_move_dir == nullptr || !board.peg(p));
             assert(board.peg(p + DIFF[dir]));
             assert(!board.peg(p + 2 * DIFF[dir]));
