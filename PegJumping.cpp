@@ -129,57 +129,6 @@ const double G_TL_SEC = 15.0;
 #endif
 Timer g_timer;
 
-class Random
-{
-private:
-    unsigned int  x, y, z, w;
-public:
-    Random(unsigned int x
-             , unsigned int y
-             , unsigned int z
-             , unsigned int w)
-        : x(x), y(y), z(z), w(w) { }
-    Random() 
-        : x(123456789), y(362436069), z(521288629), w(88675123) { }
-    Random(unsigned int seed)
-        : x(123456789), y(362436069), z(521288629), w(seed) { }
-
-    unsigned int next()
-    {
-        unsigned int t = x ^ (x << 11);
-        x = y;
-        y = z;
-        z = w;
-        return w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
-    }
-
-    int next_int() { return next(); }
-
-    // [0, upper)
-    int next_int(int upper) { assert(upper > 0); return next() % upper; }
-
-    // [low, high]
-    int next_int(int low, int high) { assert(low <= high); return next_int(high - low + 1) + low; }
-
-    double next_double(double upper) { return upper * next() / UINT_MAX; }
-    double next_double(double low, double high) { return next_double(high - low) + low; }
-
-    template <typename T>
-    int select(const vector<T>& ratio)
-    {
-        T sum = accumulate(ratio.begin(), ratio.end(), (T)0);
-        T v = next_double(sum) + (T)1e-6;
-        for (int i = 0; i < (int)ratio.size(); ++i)
-        {
-            v -= ratio[i];
-            if (v <= 0)
-                return i;
-        }
-        return 0;
-    }
-};
-Random g_rand;
-
 struct Pos
 {
     int x, y;
@@ -537,7 +486,6 @@ class Pool
 public:
     Pool()
     {
-        max_p = 0;
     }
 
     void init()
@@ -548,19 +496,16 @@ public:
     T* get()
     {
         assert(pointer < SIZE);
-        upmax(max_p, pointer + 1);
         return &data[pointer++];
     }
     T* get(const T& a)
     {
         assert(pointer < SIZE);
-        upmax(max_p, pointer + 1);
         data[pointer] = a;
         return &data[pointer++];
     }
 
 
-    int max_p;
 private:
     T data[SIZE];
     int pointer;
@@ -1170,6 +1115,7 @@ vector<Move> solve(Board board)
                     best = res;
 //                     fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
                 }
+//                 fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, res.score, (int)res.main_move.move_dir.size());
             }
         }
 TLE:
