@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 1e9;
+const double G_TL_SEC = 15;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -808,7 +808,6 @@ struct State
             move_stack = move_stack->prev;
 
             board.move(p, dir);
-//             assert(board.peg(start_pos));
             prepare_moves = move_unit_pool.get(Node<MoveUnit>(MoveUnit(p, dir), prepare_moves));
 
             // REVIEW: あやしい
@@ -874,7 +873,7 @@ struct SearchResult
     Move main_move;
     int score;
 };
-SearchResult search_move(const Board& start_board, const Pos& start, const BitBoard& start_fixed = BitBoard(), bool extension = false)
+SearchResult search_move(const Board& start_board, const Pos& start, const int search_depth = SEARCH_DEPTH, const BitBoard& start_fixed = BitBoard(), bool extension = false)
 {
     move_unit_pool.init();
     main_move_dir_pool.init();
@@ -926,7 +925,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const BitBo
             }
             else
             {
-                if (size(state->move_stack) < SEARCH_DEPTH)
+                if (size(state->move_stack) < search_depth)
                 {
                     vector<State*> next_states = state->next_states(state_pool[next]);
 
@@ -1057,15 +1056,17 @@ SearchResult search_move(const Board& start_board, const Pos& start, const BitBo
     return best;
 }
 
-SearchResult extend_move(Board board, const SearchResult& main_result)
+SearchResult extend_move(const Board& start_board, const SearchResult& main_result, BitBoard& skip_extend_start)
 {
+    Board prepared_board = start_board;
     for (auto& move : main_result.prepare_moves)
-        board.move(move);
+        prepared_board.move(move);
 
     BitBoard fixed;
     vector<Pos> ext_pos;
     {
         Pos p = main_result.main_move.start;
+        fixed.insert(p);
         for (int dir : main_result.main_move.move_dir)
         {
             p += DIFF[dir];
@@ -1080,10 +1081,13 @@ SearchResult extend_move(Board board, const SearchResult& main_result)
     best_extend.score = 0;
     for (auto& p : ext_pos)
     {
-        SearchResult res = search_move(board, p, fixed, true);
-        if (res.score > best_extend.score)
+        if (!skip_extend_start.count(p))
         {
-            best_extend = res;
+            SearchResult res = search_move(prepared_board, p, 3, fixed, true);
+            if (res.score == 0)
+                skip_extend_start.insert(p);
+            if (res.score > best_extend.score)
+                best_extend = res;
         }
     }
     if (best_extend.score == 0)
@@ -1093,16 +1097,35 @@ SearchResult extend_move(Board board, const SearchResult& main_result)
 
     SearchResult extend_res = main_result;
     extend_res.prepare_moves.insert(extend_res.prepare_moves.end(), all(best_extend.prepare_moves));
-    int extend_pos = find(all(ext_pos), best_extend.main_move.start) - ext_pos.begin();
-    extend_res.main_move.move_dir.insert(extend_res.main_move.move_dir.begin() + extend_pos + 1, all(best_extend.main_move.move_dir));
+    {
+        Pos p = main_result.main_move.start;
+        vector<int> move_dir;
+        bool inserted = false;
+        if (best_extend.main_move.start == p)
+        {
+            cerr << "hoge" << endl;
+            inserted = true;
+            move_dir = best_extend.main_move.move_dir;
+        }
+        for (int dir : main_result.main_move.move_dir)
+        {
+            p += 2 * DIFF[dir];
+            move_dir.push_back(dir);
+            if (!inserted && p == best_extend.main_move.start)
+            {
+                inserted = true;
+                move_dir.insert(move_dir.end(), all(best_extend.main_move.move_dir));
+            }
+        }
+        assert(inserted);
+        extend_res.main_move.move_dir = move_dir;
+    }
 
-//     cerr << 1 << endl;
+    Board board = start_board;
     int score = 0;
-    for (auto& move : best_extend.prepare_moves)
+    for (auto& move : extend_res.prepare_moves)
         score += board.move_score(move);
-//     cerr << 2 << endl;
-    score += board.move_score(main_result.main_move);
-//     cerr << 3 << endl;
+    score += board.move_score(extend_res.main_move);
     extend_res.score = score;
 
     return extend_res;
@@ -1123,20 +1146,24 @@ vector<Move> solve(Board board)
             if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
                 goto TLE;
 
-            if (board.at(x, y))
+            if (board.peg(x, y))
             {
                 SearchResult res = search_move(board, Pos(x, y));
-//                 for (;;)
-//                 {
-//                     SearchResult extend_res = extend_move(board, res);
-//                     if (extend_res.score == res.score)
-//                         break;
-//                     res = extend_res;
-//                 }
+                BitBoard skip_extend_start;
+                for (;;)
+                {
+                    SearchResult extend_res = extend_move(board, res, skip_extend_start);
+                    //                     dump(res.score);
+                    //                     dump(extend_res.score);
+                    if (extend_res.score == res.score)
+                        break;
+                    //                         fprintf(stderr, "(%2d, %2d): %7d -> %7d\n", x, y, res.score, extend_res.score);
+                    res = extend_res;
+                }
                 if (res.score > best.score)
                 {
                     best = res;
-                    fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
+//                     fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
                 }
             }
         }
@@ -1155,7 +1182,7 @@ TLE:
 
         res_moves.insert(res_moves.end(), all(best.prepare_moves));
         res_moves.push_back(best.main_move);
-        break;
+//         break;
     }
     return res_moves;
 }
