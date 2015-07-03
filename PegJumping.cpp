@@ -975,49 +975,51 @@ SearchResult search_move(const Board& start_board, const Pos& start, const BitBo
         }
     }
 
-//     if (extension)
-//     {
-//         pint best(0, 0);
-//         vector<Move> best_moves;
-//         rep(qi, end_qi)
-//         {
-//             for (auto& it : done_moves[qi])
-//             {
-//                 static vector<Move> prepare_moves;
-//                 prepare_moves.clear();
-//                 for (auto node = it.first; node != nullptr; node = node->prev)
-//                     prepare_moves.push_back(Move(node->val.pos, {node->val.dir}));
-//                 reverse(all(prepare_moves));
-//
-//                 static Move main_move;
-//                 main_move.start = start;
-//                 main_move.move_dir.clear();
-//                 for (auto node = it.second; node != nullptr; node = node->prev)
-//                     main_move.move_dir.push_back(node->val);
-//                 reverse(all(main_move.move_dir));
-//
-//                 Board b = start_board;
-//                 for (auto& move : prepare_moves)
-//                     b.move(move);
-//
-//                 int sum_peg = 0;
-//                 Pos pos = start;
-//                 for (int dir : main_move.move_dir)
-//                 {
-//                     sum_peg += b.at(pos + DIFF[dir]);
-//                     pos += 2 * DIFF[dir];
-//                 }
-//                 pint tt(main_move.move_dir.size(), sum_peg);
-//                 if (pos == start && tt > best)
-//                 {
-//                     best = tt;
-//                     best_moves = prepare_moves;
-//                     best_moves.push_back(main_move);
-//                 }
-//             }
-//         }
-//         return best_moves;
-//     }
+    if (extension)
+    {
+        SearchResult best;
+        best.score = 0;
+        rep(qi, end_qi)
+        {
+            for (auto& it : done_moves[qi])
+            {
+                static vector<Move> prepare_moves;
+                prepare_moves.clear();
+                for (auto node = it.first; node != nullptr; node = node->prev)
+                    prepare_moves.push_back(Move(node->val.pos, {node->val.dir}));
+                reverse(all(prepare_moves));
+
+                static Move main_move;
+                main_move.start = start;
+                main_move.move_dir.clear();
+                for (auto node = it.second; node != nullptr; node = node->prev)
+                    main_move.move_dir.push_back(node->val);
+                reverse(all(main_move.move_dir));
+
+                Board b = start_board;
+                for (auto& move : prepare_moves)
+                    b.move(move);
+
+                int sum_peg = 0;
+                Pos pos = start;
+                for (int dir : main_move.move_dir)
+                {
+                    sum_peg += b.at(pos + DIFF[dir]);
+                    pos += 2 * DIFF[dir];
+                }
+
+                int score = main_move.move_dir.size() * 10000 + sum_peg;
+                if (pos == start && score > best.score)
+                {
+                    assert(!main_move.move_dir.empty());
+                    best.score = score;
+                    best.prepare_moves = prepare_moves;
+                    best.main_move = main_move;
+                }
+            }
+        }
+        return best;
+    }
 
     SearchResult best;
     best.score = 0;
@@ -1055,33 +1057,56 @@ SearchResult search_move(const Board& start_board, const Pos& start, const BitBo
     return best;
 }
 
-// vector<Move> extend_move(Board board, const vector<Move>& moves)
-// {
-//     rep(i, (int)moves.size() - 1)
-//         board.move(moves[i]);
-//
-//     BitBoard fixed;
-//     vector<Pos> ext_pos;
-//     {
-//         Pos p = moves.back().start;
-//         for (int dir : moves.back().move_dir)
-//         {
-//             p += DIFF[dir];
-//             fixed.insert(p);
-//             p += DIFF[dir];
-//             fixed.insert(p);
-//             ext_pos.push_back(p);
-//         }
-//     }
-//
-//     for (auto& p : ext_pos)
-//     {
-//         vector<Move> moves = search_move(board, p, fixed, true);
-//         if (!moves.empty())
-//         {
-//         }
-//     }
-// }
+SearchResult extend_move(Board board, const SearchResult& main_result)
+{
+    for (auto& move : main_result.prepare_moves)
+        board.move(move);
+
+    BitBoard fixed;
+    vector<Pos> ext_pos;
+    {
+        Pos p = main_result.main_move.start;
+        for (int dir : main_result.main_move.move_dir)
+        {
+            p += DIFF[dir];
+            fixed.insert(p);
+            p += DIFF[dir];
+            fixed.insert(p);
+            ext_pos.push_back(p);
+        }
+    }
+
+    SearchResult best_extend;
+    best_extend.score = 0;
+    for (auto& p : ext_pos)
+    {
+        SearchResult res = search_move(board, p, fixed, true);
+        if (res.score > best_extend.score)
+        {
+            best_extend = res;
+        }
+    }
+    if (best_extend.score == 0)
+        return main_result;
+
+    assert(best_extend.main_move.move_dir.size());
+
+    SearchResult extend_res = main_result;
+    extend_res.prepare_moves.insert(extend_res.prepare_moves.end(), all(best_extend.prepare_moves));
+    int extend_pos = find(all(ext_pos), best_extend.main_move.start) - ext_pos.begin();
+    extend_res.main_move.move_dir.insert(extend_res.main_move.move_dir.begin() + extend_pos + 1, all(best_extend.main_move.move_dir));
+
+//     cerr << 1 << endl;
+    int score = 0;
+    for (auto& move : best_extend.prepare_moves)
+        score += board.move_score(move);
+//     cerr << 2 << endl;
+    score += board.move_score(main_result.main_move);
+//     cerr << 3 << endl;
+    extend_res.score = score;
+
+    return extend_res;
+}
 vector<Move> solve(Board board)
 {
     int score = 0;
@@ -1101,17 +1126,25 @@ vector<Move> solve(Board board)
             if (board.at(x, y))
             {
                 SearchResult res = search_move(board, Pos(x, y));
+//                 for (;;)
+//                 {
+//                     SearchResult extend_res = extend_move(board, res);
+//                     if (extend_res.score == res.score)
+//                         break;
+//                     res = extend_res;
+//                 }
                 if (res.score > best.score)
-                    {
-                        best = res;
-                        fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
-
-                    }
+                {
+                    best = res;
+                    fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
                 }
+            }
         }
 TLE:
         if (best.score == 0)
             break;
+
+//         best = extend_move(board, best);
 
         int s = 0;
         for (auto& move : best.prepare_moves)
@@ -1120,7 +1153,6 @@ TLE:
         score += s;
 //         fprintf(stderr, "%9d (+%9d)\n", score, s);
 
-//         res_moves.insert(res_moves.end(), all(best));
         res_moves.insert(res_moves.end(), all(best.prepare_moves));
         res_moves.push_back(best.main_move);
         break;
