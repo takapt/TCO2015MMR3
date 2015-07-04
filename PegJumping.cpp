@@ -874,6 +874,7 @@ struct State
 };
 
 
+bool shuffle_q = false;
 struct SearchResult
 {
     vector<Move> prepare_moves;
@@ -922,6 +923,8 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
         state_pool[next].init();
         done_moves[qi].clear();
 
+        if (shuffle_q)
+            random_shuffle(all(search_q[cur]));
         for (State* state : search_q[cur])
         {
             state->pop_stack();
@@ -1170,6 +1173,27 @@ TLE:
     return res_moves;
 }
 
+vector<Move> solve_retry(const Board& board)
+{
+    int best_score = 0;
+    vector<Move> best_moves;
+    while (g_timer.get_elapsed() < G_TL_SEC * 0.95)
+    {
+        auto moves = solve(board);
+        Board b = board;
+        int score = 0;
+        for (auto& move : moves)
+            score += b.move_score(move);
+        if (score > best_score)
+        {
+            best_score = score;
+            best_moves = moves;
+        }
+        shuffle_q = true;
+    }
+    return best_moves;
+}
+
 class PegJumping
 {
 public:
@@ -1178,7 +1202,7 @@ public:
         g_timer.start();
 
         vector<string> res;
-        for (auto& move : solve(Board(peg_value, board)))
+        for (auto& move : solve_retry(Board(peg_value, board)))
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
