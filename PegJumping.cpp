@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 1e9;
+const double G_TL_SEC = 15;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -648,14 +648,12 @@ struct State
         return size(move_stack) == 0;
     }
 
-    vector<State*> next_main_move_states(Pool<State, STATE_POOL_SIZE>& state_pool) const
+    void next_main_move_states(Pool<State, STATE_POOL_SIZE>& state_pool, vector<State*>& q) const
     {
         assert(no_prepare_search());
         assert(size(move_stack) == 0);
         assert(size(change_need_stack) == 0);
         assert(main_move_dir == nullptr || !board.peg(cur_pos));
-
-        vector<State*> next_states;
 
         rep(dir, 4)
         {
@@ -680,20 +678,18 @@ struct State
                 else
                     nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(next, true), nstate.change_need_stack));
 
-                next_states.push_back(p_nstate);
+                push(q, p_nstate);
             }
         }
-
-        return next_states;
     }
 
-    vector<State*> next_states_for_change(const Pos& pos, Pool<State, STATE_POOL_SIZE>& state_pool) const
+    void next_states_for_change(Pool<State, STATE_POOL_SIZE>& state_pool, vector<State*>& q) const
     {
-        if (fixed.count(pos))
-            return {};
+        assert(!no_prepare_search());
 
-        static vector<State*> next_states;
-        next_states.clear();
+        const Pos& pos = change_need_stack->val.first;
+        if (fixed.count(pos))
+            return;
 
         if (board.peg(pos))
         {
@@ -723,7 +719,7 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
-                    next_states.push_back(p_nstate);
+                    push(q, p_nstate);
                 }
             }
 
@@ -751,7 +747,7 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
-                    next_states.push_back(p_nstate);
+                    push(q, p_nstate);
                 }
             }
         }
@@ -783,20 +779,10 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, true), nstate.change_need_stack));
 
-                    next_states.push_back(p_nstate);
+                    push(q, p_nstate);
                 }
             }
         }
-
-        return next_states;
-    }
-
-    vector<State*> next_states(Pool<State, STATE_POOL_SIZE>& state_pool) const
-    {
-        if (no_prepare_search())
-            return next_main_move_states(state_pool);
-        else
-            return next_states_for_change(change_need_stack->val.first, state_pool);
     }
 
     void pop_stack()
@@ -863,15 +849,30 @@ struct State
     {
         return Move(start_pos, main_move_dir->list());
     }
+
+    struct StatePointerCmp
+    {
+        bool operator()(const State* a, const State* b)
+        {
+            return a->score() > b->score();
+        }
+    };
+    void push(vector<State*>& q, State* s) const
+    {
+        if (q.size() < SEARCH_Q_SIZE || s->score() > q.front()->score())
+        {
+            q.push_back(s);
+            push_heap(all(q), StatePointerCmp());
+            if (q.size() > SEARCH_Q_SIZE)
+            {
+                pop_heap(all(q), StatePointerCmp());
+                q.pop_back();
+            }
+        }
+    }
+
 };
 
-struct StatePointerCmp
-{
-    bool operator()(const State* a, const State* b)
-    {
-        return a->score() > b->score();
-    }
-};
 
 struct SearchResult
 {
@@ -933,22 +934,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             {
                 if (size(state->move_stack) < search_depth)
                 {
-                    vector<State*> next_states = state->next_states(state_pool[next]);
-
-                    auto& q = search_q[next];
-                    for (auto& s : next_states)
-                    {
-                        if (q.size() < SEARCH_Q_SIZE || s->score() > q.front()->score())
-                        {
-                            q.push_back(s);
-                            push_heap(all(q), StatePointerCmp());
-                            if (q.size() > SEARCH_Q_SIZE)
-                            {
-                                pop_heap(all(q), StatePointerCmp());
-                                q.pop_back();
-                            }
-                        }
-                    }
+                    state->next_states_for_change(state_pool[next], search_q[next]);
                 }
             }
         }
@@ -963,21 +949,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             if (!extension || state->cur_pos == start)
                 done_moves[qi].push_back(make_pair(state->prepare_moves, state->main_move_dir));
 
-            vector<State*> next_states = state->next_states(state_pool[next]);
-            auto& q = search_q[next];
-            for (auto& s : next_states)
-            {
-                if (q.size() < SEARCH_Q_SIZE || s->score() > q.front()->score())
-                {
-                    q.push_back(s);
-                    push_heap(all(q), StatePointerCmp());
-                    if (q.size() > SEARCH_Q_SIZE)
-                    {
-                        pop_heap(all(q), StatePointerCmp());
-                        q.pop_back();
-                    }
-                }
-            }
+            state->next_main_move_states(state_pool[next], search_q[next]);
         }
     }
 
@@ -1175,7 +1147,7 @@ vector<Move> solve(Board board)
                 if (res.score > best.score)
                 {
                     best = res;
-//                     fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, best.score, (int)best.main_move.move_dir.size());
+//                     fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, best.score, (int)best.main_move.move_dir.size(), g_timer.get_elapsed());
                 }
 //                 fprintf(stderr, "(%2d, %2d): %7d, %4d\n", x, y, res.score, (int)res.main_move.move_dir.size());
             }
