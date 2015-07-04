@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 15;
+const double G_TL_SEC = 1e9;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -267,6 +267,104 @@ struct MoveUnit
     {
     }
 };
+
+
+int BOARD_SIZE;
+class BitBoard
+{
+public:
+    BitBoard()
+    {
+        clr(f, 0);
+    }
+
+    void insert(int x, int y)
+    {
+        f[y] |= 1ull << x;
+    }
+    void insert(const Pos& pos)
+    {
+        insert(pos.x, pos.y);
+    }
+
+    void erase(int x, int y)
+    {
+        f[y] &= ~(1ull << x);
+    }
+    void erase(const Pos& pos)
+    {
+        erase(pos.x, pos.y);
+    }
+
+    bool count(int x, int y) const
+    {
+        return f[y] >> x & 1;
+    }
+    bool count(const Pos& pos) const
+    {
+        return count(pos.x, pos.y);
+    }
+
+    bool peg(int x, int y) const
+    {
+        return count(x, y);
+    }
+    bool peg(const Pos& pos) const
+    {
+        return count(pos);
+    }
+
+    bool at(int x, int y) const
+    {
+        return count(x, y);
+    }
+    bool at(const Pos& pos) const
+    {
+        return at(pos);
+    }
+
+    bool in(int x, int y) const
+    {
+        return 0 <= x && x < size() && 0 <= y && y < size();
+    }
+    bool in(const Pos& pos) const
+    {
+        return in(pos.x, pos.y);
+    }
+
+    bool can_move(int x, int y, int dir) const
+    {
+        assert(in(x, y));
+        return at(x, y)
+            && in(x + DX[dir], y + DY[dir]) && at(x + DX[dir], y + DY[dir])
+            && in(x + 2 * DX[dir], y + 2 * DY[dir]) && !at(x + 2 * DX[dir], y + 2 * DY[dir]);
+    }
+    bool can_move(const Pos& pos, int dir) const
+    {
+        return can_move(pos.x, pos.y, dir);
+    }
+
+    void move(int x, int y, int dir)
+    {
+        assert(can_move(x, y, dir));
+        insert(x + 2 * DX[dir], y + 2 * DY[dir]);
+        erase(x, y);
+        erase(x + DX[dir], y + DY[dir]);
+    }
+    void move(const Pos& pos, int dir)
+    {
+        move(pos.x, pos.y, dir);
+    }
+
+    int size() const
+    {
+        return ::BOARD_SIZE;
+    }
+
+private:
+    ull f[60];
+};
+
 class Board
 {
 public:
@@ -394,6 +492,15 @@ public:
         return s;
     }
 
+    BitBoard make_bitboard() const
+    {
+        BitBoard bb;
+        rep(y, n) rep(x, n)
+            if (peg(x, y))
+                bb.insert(x, y);
+        return bb;
+    }
+
 private:
     void set(int x, int y, int peg)
     {
@@ -486,28 +593,6 @@ private:
 };
 
 
-class BitBoard
-{
-public:
-    void insert(const Pos& pos)
-    {
-        f[index(pos)] = true;
-    }
-    void erase(const Pos& pos)
-    {
-        f[index(pos)] = false;
-    }
-    bool count(const Pos& pos) const
-    {
-        return f[index(pos)];
-    }
-private:
-    int index(const Pos& pos) const
-    {
-        return (pos.x << 6) | pos.y;
-    }
-    bitset<64 * 60> f;
-};
 
 
 const int SEARCH_DEPTH = 10;
@@ -525,7 +610,7 @@ Pool<Node<pair<Pos, bool>>, BASE_SIZE * 6> change_need_stack_pool;
 
 struct State
 {
-    Board board;
+    BitBoard board;
     Pos start_pos;
 
     BitBoard fixed;
@@ -813,7 +898,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
     done_moves[0].clear();
 
     State* start_state = state_pool[0].get(State());
-    start_state->board = start_board;
+    start_state->board = start_board.make_bitboard();
     start_state->cur_pos = start_state->start_pos = start;
     start_state->fixed = start_fixed;
     start_state->fixed.insert(start);
@@ -1053,6 +1138,8 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
 }
 vector<Move> solve(Board board)
 {
+    ::BOARD_SIZE = board.size();
+
     int score = 0;
     vector<Move> res_moves;
     for (int main_move_i = 0; g_timer.get_elapsed() < G_TL_SEC * 0.95; ++main_move_i)
