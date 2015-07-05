@@ -65,6 +65,8 @@ bool in_rect(int x, int y, int w, int h) { return 0 <= x && x < w && 0 <= y && y
 typedef long long ll;
 typedef pair<int, int> pint;
 typedef unsigned long long ull;
+typedef unsigned int uint;
+typedef unsigned short ushort;
 
 const int DX[] = { 0, 1, 0, -1 };
 const int DY[] = { 1, 0, -1, 0 };
@@ -212,6 +214,11 @@ struct Pos
         x += DX[dir];
         y += DY[dir];
     }
+
+    uint pack() const
+    {
+        return (x << 6) | y;
+    }
 };
 Pos operator*(int a, const Pos& pos)
 {
@@ -222,6 +229,15 @@ ostream& operator<<(ostream& os, const Pos& pos)
     os << "(" << pos.x << ", " << pos.y << ")";
     return os;
 }
+uint pack_12bit(uint a, uint b)
+{
+    return (a << 12) | b;
+}
+uint pack_pospos(const Pos& a, const Pos& b)
+{
+    return pack_12bit(a.pack(), b.pack());
+}
+
 const Pos DIFF[] = {Pos(DX[0], DY[0]), Pos(DX[1], DY[1]), Pos(DX[2], DY[2]), Pos(DX[3], DY[3])};
 
 
@@ -856,7 +872,6 @@ struct State
     ll score() const
     {
         ll s = size(main_move_dir) * size(main_move_dir) - size(change_need_stack);
-        assert(s >= 0);
         return s;
     }
 
@@ -911,7 +926,7 @@ struct SearchResult
     int score;
 };
 
-SearchResult search_move(const Board& start_board, const Pos& start, const int search_depth = SEARCH_DEPTH, const BitBoard& start_fixed = BitBoard(), bool extension = false, const map<pair<Pos, Pos>, int>& dist = {})
+SearchResult search_move(const Board& start_board, const Pos& start, const int search_depth = SEARCH_DEPTH, const BitBoard& start_fixed = BitBoard(), bool extension = false, const short* dist = {})
 {
     move_unit_pool.init();
     main_move_dir_pool.init();
@@ -979,18 +994,13 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             assert(state->no_prepare_search());
             assert(size(state->move_stack) == 0);
 
-            if (!extension || (size(state->main_move_dir) > 0 && start_fixed.count(state->cur_pos) && size(state->main_move_dir) > dist.lower_bound(make_pair(start, state->cur_pos))->second))
+            if (!extension || (size(state->main_move_dir) > 0 && start_fixed.count(state->cur_pos) && size(state->main_move_dir) > dist[pack_pospos(start, state->cur_pos)]))
             {
                 done_moves[qi].push_back(make_pair(state->prepare_moves, state->main_move_dir));
-
-//                 if (extension)// && dist[make_pair(start, state->cur_pos)])
-//                     fprintf(stderr, "%3d, %3d\n", size(state->main_move_dir), dist[make_pair(start, state->cur_pos)]);
             }
 
             state->next_main_move_states(state_pool[next], search_q[next]);
         }
-
-//         fprintf(stderr, "%4d %3d %3d %3d\n", qi, (int)done_q[cur].size(), (int)search_q[cur].size(), fast_search_q.size());
     }
 
     if (extension)
@@ -1026,8 +1036,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
                     pos += 2 * DIFF[dir];
                 }
 
-//                 int score = main_move.move_dir.size() * 10000 + sum_peg;
-                int score = ((int)main_move.move_dir.size() - dist.lower_bound(make_pair(start, pos))->second) * 10000 + sum_peg;
+                int score = ((int)main_move.move_dir.size() - dist[pack_pospos(start, pos)]) * 10000 + sum_peg;
                 assert(score > 0);
                 if (score > best.score)
                 {
@@ -1099,18 +1108,27 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
         }
     }
 
-    map<pair<Pos, Pos>, int> dist;
-    map<pair<Pos, Pos>, pair<int, int>> index;
+    static short dist[64 * 64 * 64 * 64];
+    static pair<short, short> index[64 * 64 * 64 * 64];
     rep(i, ext_pos.size()) rep(j, ext_pos.size())
     {
-        auto key = make_pair(ext_pos[i], ext_pos[j]);
-        if (dist.count(key))
-            upmin(dist[key], abs(j - i));
-        else
-            dist[key] = abs(j - i);
-
-        if (dist[key] == abs(j - i))
+        auto key = pack_pospos(ext_pos[i], ext_pos[j]);
+        if (ext_pos[i] == ext_pos[j])
+        {
+            dist[key] = 0;
             index[key] = make_pair(i, j);
+        }
+        else
+        {
+            const int d = abs(j - i);
+            if (dist[key] == 0)
+                dist[key] = d;
+            else
+                upmin(dist[key], d);
+
+            if (dist[key] == d)
+                index[key] = make_pair(i, j);
+        }
     }
 
     SearchResult best_extend;
@@ -1127,7 +1145,12 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
         }
     }
     if (best_extend.score == 0)
+    {
+        rep(i, ext_pos.size()) rep(j, ext_pos.size())
+            dist[pack_pospos(ext_pos[i], ext_pos[j])] = 0;
+
         return main_result;
+    }
 
 
     assert(best_extend.main_move.move_dir.size());
@@ -1137,21 +1160,18 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
     {
         Pos start = best_extend.main_move.start;
         Pos goal = best_extend.main_move.make_path().back();
-        auto key = make_pair(start, goal);
-        assert(dist.count(key));
+        auto key = pack_pospos(start, goal);
         if (index[key].first > index[key].second)
         {
             best_extend.main_move = best_extend.main_move.reverse();
             assert(best_extend.main_move.start == goal);
             swap(start, goal);
-            swap(key.first, key.second);
+            key = pack_pospos(start, goal);
         }
 
         auto& dirs = extend_res.main_move.move_dir;
         dirs.erase(dirs.begin() + index[key].first, dirs.begin() + index[key].second);
         dirs.insert(dirs.begin() + index[key].first, all(best_extend.main_move.move_dir));
-
-//         fprintf(stderr, "%3d, %3d - %3d\n", (int)best_extend.main_move.move_dir.size() - dist[key], (int)best_extend.main_move.move_dir.size(), dist[key]);
     }
 
     Board board = start_board;
@@ -1160,6 +1180,10 @@ SearchResult extend_move(const Board& start_board, const SearchResult& main_resu
         score += board.move_score(move);
     score += board.move_score(extend_res.main_move);
     extend_res.score = score;
+
+
+    rep(i, ext_pos.size()) rep(j, ext_pos.size())
+        dist[pack_pospos(ext_pos[i], ext_pos[j])] = 0;
 
     return extend_res;
 }
@@ -1202,8 +1226,6 @@ vector<Move> solve(Board board)
                     SearchResult extend_res = extend_move(board, res, skip_extend_start);
                     if (extend_res.score == res.score)
                         break;
-//                     dump((extend_res.main_move.move_dir.size() - res.main_move.move_dir.size()));
-//                     fprintf(stderr, "(%2d, %2d): %7d -> %7d\n", x, y, res.score, extend_res.score);
                     res = extend_res;
                 }
                 if (res.score > best.score)
