@@ -1088,6 +1088,9 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
 
 SearchResult extend_move(const Board& start_board, const SearchResult& main_result, BitBoard& skip_extend_start)
 {
+    assert(main_result.score > 0);
+    assert(main_result.main_move.move_dir.size() > 0);
+
     Board prepared_board = start_board;
     for (auto& move : main_result.prepare_moves)
         prepared_board.move(move);
@@ -1220,20 +1223,23 @@ vector<Move> solve(Board board)
             if (board.peg(x, y))
             {
                 SearchResult res = search_move(board, Pos(x, y));
-                BitBoard skip_extend_start;
-                while (!skip())
+                if (res.score > 0)
                 {
-                    SearchResult extend_res = extend_move(board, res, skip_extend_start);
-                    if (extend_res.score == res.score)
-                        break;
-                    res = extend_res;
+                    BitBoard skip_extend_start;
+                    while (!skip())
+                    {
+                        SearchResult extend_res = extend_move(board, res, skip_extend_start);
+                        if (extend_res.score == res.score)
+                            break;
+                        res = extend_res;
+                    }
+                    if (res.score > best.score)
+                    {
+                        best = res;
+//                         fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, best.score, (int)best.main_move.move_dir.size(), g_timer.get_elapsed());
+                    }
+                    //                     fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, res.score, (int)res.main_move.move_dir.size(), g_timer.get_elapsed());
                 }
-                if (res.score > best.score)
-                {
-                    best = res;
-//                     fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, best.score, (int)best.main_move.move_dir.size(), g_timer.get_elapsed());
-                }
-//                     fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, res.score, (int)res.main_move.move_dir.size(), g_timer.get_elapsed());
             }
         }
 TLE:
