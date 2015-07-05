@@ -1126,19 +1126,33 @@ vector<Move> solve(Board board)
         best.score = 0;
         rep(y, board.size()) rep(x, board.size())
         {
-            if (main_move_i == 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9)
-                goto TLE;
-            else if (main_move_i > 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9 && main_move_timer.get_elapsed() > G_TL_SEC * 0.02)
-                goto TLE;
+            const auto skip = [&]()
+            {
+                if (main_move_i == 0 && g_timer.get_elapsed() > G_TL_SEC * 0.85)
+                    return true;
+                else if (main_move_i > 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9 && main_move_timer.get_elapsed() > G_TL_SEC * 0.003)
+                    return true;
+                else if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
+                    return true;
+                else
+                    return false;
+            };
 
-            if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
+            if (skip())
                 goto TLE;
+//             if (main_move_i == 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9)
+//                 goto TLE;
+//             else if (main_move_i > 0 && g_timer.get_elapsed() > G_TL_SEC * 0.9 && main_move_timer.get_elapsed() > G_TL_SEC * 0.02)
+//                 goto TLE;
+//
+//             if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
+//                 goto TLE;
 
             if (board.peg(x, y))
             {
                 SearchResult res = search_move(board, Pos(x, y));
                 BitBoard skip_extend_start;
-                for (;;)
+                while (!skip())
                 {
                     SearchResult extend_res = extend_move(board, res, skip_extend_start);
                     if (extend_res.score == res.score)
@@ -1202,7 +1216,7 @@ public:
         g_timer.start();
 
         vector<string> res;
-        for (auto& move : solve_retry(Board(peg_value, board)))
+        for (auto& move : solve(Board(peg_value, board)))
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
