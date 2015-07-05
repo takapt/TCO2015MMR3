@@ -674,7 +674,85 @@ struct State
         return size(move_stack) == 0;
     }
 
-    void next_main_move_states(Pool<State, STATE_POOL_SIZE>& state_pool, vector<State*>& q) const
+
+    struct StateFastPrioityQueue
+    {
+    public:
+        StateFastPrioityQueue()
+        {
+            clr(q_index, -1);
+            clear();
+        }
+
+        void push(State* state)
+        {
+            const ll score = state->score();
+            assert(score < Q_INDEX_SIZE);
+            if (q_index[score] == -1)
+            {
+                assert(pushed_score.size() < Q_NUM);
+                q_index[score] = pushed_score.size();
+                pushed_score.push_back(score);
+            }
+            assert(count(all(pushed_score), score));
+            q[q_index[score]].push_back(state);
+            ++size_;
+        }
+
+        void prepare_pop()
+        {
+            sort(all(pushed_score));
+        }
+
+        State* pop()
+        {
+            assert(!empty());
+            assert(!pushed_score.empty());
+            assert(q_index[pushed_score.back()] != -1);
+
+            auto& cur_q = q[q_index[pushed_score.back()]];
+            assert(!cur_q.empty());
+            State* res = cur_q.back();
+            cur_q.pop_back();
+            if (cur_q.empty())
+            {
+                q_index[pushed_score.back()] = -1;
+                pushed_score.pop_back();
+            }
+            --size_;
+        }
+
+        void clear()
+        {
+            for (int i : pushed_score)
+            {
+                q[q_index[i]].clear();
+                q_index[i] = -1;
+            }
+            pushed_score.clear();
+            size_ = 0;
+        }
+
+        int size() const
+        {
+            return size_;
+        }
+        bool empty() const
+        {
+            return size() == 0;
+        }
+
+    private:
+        static const int Q_NUM = 1024; // diffrent scores
+        static const int Q_INDEX_SIZE = 2 * ten(6); // need max(score)
+
+        vector<State*> q[Q_NUM];
+        int q_index[Q_INDEX_SIZE];
+        vector<ll> pushed_score;
+        int size_;
+    };
+
+    void next_main_move_states(Pool<State, STATE_POOL_SIZE>& state_pool, StateFastPrioityQueue& q) const
     {
         assert(no_prepare_search());
         assert(size(move_stack) == 0);
@@ -704,12 +782,13 @@ struct State
                 else
                     nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(next, true), nstate.change_need_stack));
 
-                push(q, p_nstate);
+//                 push(q, p_nstate);
+                q.push(p_nstate);
             }
         }
     }
 
-    void next_states_for_change(Pool<State, STATE_POOL_SIZE>& state_pool, vector<State*>& q) const
+    void next_states_for_change(Pool<State, STATE_POOL_SIZE>& state_pool, StateFastPrioityQueue& q) const
     {
         assert(!no_prepare_search());
 
@@ -745,7 +824,8 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
-                    push(q, p_nstate);
+//                     push(q, p_nstate);
+                    q.push(p_nstate);
                 }
             }
 
@@ -773,7 +853,8 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, false), nstate.change_need_stack));
 
-                    push(q, p_nstate);
+//                     push(q, p_nstate);
+                    q.push(p_nstate);
                 }
             }
         }
@@ -805,7 +886,8 @@ struct State
                     else
                         nstate.change_need_stack = change_need_stack_pool.get(Node<pair<Pos, bool>>(make_pair(b, true), nstate.change_need_stack));
 
-                    push(q, p_nstate);
+//                     push(q, p_nstate);
+                    q.push(p_nstate);
                 }
             }
         }
@@ -852,9 +934,13 @@ struct State
         }
     }
 
+    ll ss;
     ll score() const
     {
-        return size(main_move_dir) * size(main_move_dir) - size(change_need_stack);
+        return ss;
+        ll s = size(main_move_dir) * size(main_move_dir) - size(change_need_stack) + SEARCH_DEPTH * 2;
+        assert(s >= 0);
+        return s;
     }
 
     bool operator<(const State& other) const
@@ -907,6 +993,7 @@ struct SearchResult
     Move main_move;
     int score;
 };
+
 SearchResult search_move(const Board& start_board, const Pos& start, const int search_depth = SEARCH_DEPTH, const BitBoard& start_fixed = BitBoard(), bool extension = false, const map<pair<Pos, Pos>, int>& dist = {})
 {
     move_unit_pool.init();
@@ -916,10 +1003,16 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
 
     static vector<State*> done_q[2];
     static vector<State*> search_q[2];
+//     static State::StateFastPrioityQueue done_q[2];
+//     static State::StateFastPrioityQueue search_q[2];
     static Pool<State, STATE_POOL_SIZE> state_pool[2];
 
     static vector<pair<Node<MoveUnit>*, Node<int>*>> done_moves[64 * 64];
 
+//     static State::StateFastPrioityQueue fast_done_q;
+    static State::StateFastPrioityQueue fast_search_q;
+//     fast_done_q.clear();
+    fast_search_q.clear();
 
     done_q[0].clear();
     search_q[0].clear();
@@ -939,8 +1032,12 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
         const int cur = qi & 1;
         const int next = cur ^ 1;
 
-        if (done_q[cur].size() + search_q[cur].size() == 0)
+//         if (done_q[cur].size() + search_q[cur].size() == 0)
+//             break;
+        if (done_q[cur].empty() && search_q[cur].empty() && fast_search_q.empty())
             break;
+        if (qi == 20)
+            exit(0);
 
         if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
             break;
@@ -964,7 +1061,8 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             {
                 if (size(state->move_stack) < search_depth)
                 {
-                    state->next_states_for_change(state_pool[next], search_q[next]);
+//                     state->next_states_for_change(state_pool[next], search_q[next]);
+                    state->next_states_for_change(state_pool[next], fast_search_q);
                 }
             }
         }
@@ -985,8 +1083,15 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
 //                     fprintf(stderr, "%3d, %3d\n", size(state->main_move_dir), dist[make_pair(start, state->cur_pos)]);
             }
 
-            state->next_main_move_states(state_pool[next], search_q[next]);
+            state->next_main_move_states(state_pool[next], fast_search_q);
         }
+
+        fprintf(stderr, "%4d %3d %3d %3d\n", qi, (int)done_q[cur].size(), (int)search_q[cur].size(), fast_search_q.size());
+
+        fast_search_q.prepare_pop();
+        for (int i = 0; i < SEARCH_Q_SIZE && !fast_search_q.empty(); ++i)
+            search_q[next].push_back(fast_search_q.pop());
+        fast_search_q.clear();
     }
 
     if (extension)
@@ -1289,7 +1394,7 @@ public:
         g_timer.start();
 
         vector<string> res;
-        for (auto& move : solve_retry(Board(peg_value, board)))
+        for (auto& move : solve(Board(peg_value, board)))
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
@@ -1297,6 +1402,21 @@ public:
     }
 };
 
+void test()
+{
+    State::StateFastPrioityQueue q;
+    State a[5];
+    ll s[] = { 3, 1, 4, 1, 5 };
+    rep(i, 5)
+    {
+        a[i].ss = s[i];
+        q.push(&a[i]);
+    }
+
+    rep(i, 5)
+    {
+    }
+}
 
 #ifdef LOCAL
 int main()
