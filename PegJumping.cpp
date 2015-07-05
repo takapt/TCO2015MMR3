@@ -102,7 +102,7 @@ double get_absolute_sec()
     double get_ms() { struct timeval t; gettimeofday(&t, NULL); return (double)t.tv_sec * 1000 + (double)t.tv_usec / 1000; }
 #endif
 
-// #define USE_RDTSC
+#define USE_RDTSC
 class Timer
 {
 private:
@@ -123,7 +123,7 @@ public:
 };
 
 #ifdef LOCAL
-const double G_TL_SEC = 20;
+const double G_TL_SEC = 15;
 #else
 const double G_TL_SEC = 15.0;
 #endif
@@ -687,6 +687,8 @@ struct State
         void push(State* state)
         {
             const ll score = state->score();
+            if (score >= Q_INDEX_SIZE)
+                dump(score);
             assert(score < Q_INDEX_SIZE);
             if (q_index[score] == -1)
             {
@@ -712,7 +714,9 @@ struct State
 
             auto& cur_q = q[q_index[pushed_score.back()]];
             assert(!cur_q.empty());
+
             State* res = cur_q.back();
+
             cur_q.pop_back();
             if (cur_q.empty())
             {
@@ -720,6 +724,8 @@ struct State
                 pushed_score.pop_back();
             }
             --size_;
+
+            return res;
         }
 
         void clear()
@@ -934,10 +940,8 @@ struct State
         }
     }
 
-    ll ss;
     ll score() const
     {
-        return ss;
         ll s = size(main_move_dir) * size(main_move_dir) - size(change_need_stack) + SEARCH_DEPTH * 2;
         assert(s >= 0);
         return s;
@@ -1032,12 +1036,10 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
         const int cur = qi & 1;
         const int next = cur ^ 1;
 
-//         if (done_q[cur].size() + search_q[cur].size() == 0)
-//             break;
-        if (done_q[cur].empty() && search_q[cur].empty() && fast_search_q.empty())
+        if (done_q[cur].size() + search_q[cur].size() == 0)
             break;
-        if (qi == 20)
-            exit(0);
+//         if (done_q[cur].empty() && search_q[cur].empty() && fast_search_q.empty())
+//             break;
 
         if (g_timer.get_elapsed() > G_TL_SEC * 0.95)
             break;
@@ -1046,6 +1048,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
         search_q[next].clear();
         state_pool[next].init();
         done_moves[qi].clear();
+        fast_search_q.clear();
 
         if (shuffle_q)
             random_shuffle(all(search_q[cur]));
@@ -1075,7 +1078,7 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
             assert(size(state->move_stack) == 0);
 
             assert(start_fixed.count(state->cur_pos) == dist.count(make_pair(start, state->cur_pos)));
-            if (!extension || start_fixed.count(state->cur_pos) && size(state->main_move_dir) > dist.lower_bound(make_pair(start, state->cur_pos))->second)
+            if (!extension || (start_fixed.count(state->cur_pos) && size(state->main_move_dir) > dist.lower_bound(make_pair(start, state->cur_pos))->second))
             {
                 done_moves[qi].push_back(make_pair(state->prepare_moves, state->main_move_dir));
 
@@ -1083,15 +1086,15 @@ SearchResult search_move(const Board& start_board, const Pos& start, const int s
 //                     fprintf(stderr, "%3d, %3d\n", size(state->main_move_dir), dist[make_pair(start, state->cur_pos)]);
             }
 
+//             state->next_main_move_states(state_pool[next], search_q[next]);
             state->next_main_move_states(state_pool[next], fast_search_q);
         }
 
-        fprintf(stderr, "%4d %3d %3d %3d\n", qi, (int)done_q[cur].size(), (int)search_q[cur].size(), fast_search_q.size());
+//         fprintf(stderr, "%4d %3d %3d %3d\n", qi, (int)done_q[cur].size(), (int)search_q[cur].size(), fast_search_q.size());
 
         fast_search_q.prepare_pop();
         for (int i = 0; i < SEARCH_Q_SIZE && !fast_search_q.empty(); ++i)
             search_q[next].push_back(fast_search_q.pop());
-        fast_search_q.clear();
     }
 
     if (extension)
@@ -1394,7 +1397,7 @@ public:
         g_timer.start();
 
         vector<string> res;
-        for (auto& move : solve(Board(peg_value, board)))
+        for (auto& move : solve_retry(Board(peg_value, board)))
             res.push_back(move.to_res());
 
         dump(g_timer.get_elapsed());
@@ -1402,21 +1405,6 @@ public:
     }
 };
 
-void test()
-{
-    State::StateFastPrioityQueue q;
-    State a[5];
-    ll s[] = { 3, 1, 4, 1, 5 };
-    rep(i, 5)
-    {
-        a[i].ss = s[i];
-        q.push(&a[i]);
-    }
-
-    rep(i, 5)
-    {
-    }
-}
 
 #ifdef LOCAL
 int main()
