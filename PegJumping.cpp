@@ -709,8 +709,6 @@ struct State
 
                 nstate.move_stack = move_stack_pool.get(Node<MoveUnit>(MoveUnit(cur_pos, dir), nstate.move_stack));
 
-                // REVIEW: スタック順が両パターンいるか？
-
                 if (!board.peg(nextnext))
                     nstate.fixed.insert(nextnext);
                 else
@@ -842,7 +840,6 @@ struct State
             board.move(p, dir);
             prepare_moves = move_unit_pool.get(Node<MoveUnit>(MoveUnit(p, dir), prepare_moves));
 
-            // REVIEW: あやしい
             rep(i, 3)
                 fixed.erase(p + i * DIFF[dir]);
             rep(i, 3)
@@ -1236,9 +1233,7 @@ vector<Move> solve(Board board)
                     if (res.score > best.score)
                     {
                         best = res;
-//                         fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, best.score, (int)best.main_move.move_dir.size(), g_timer.get_elapsed());
                     }
-                    //                     fprintf(stderr, "(%2d, %2d): %7d, %4d, %4.1f\n", x, y, res.score, (int)res.main_move.move_dir.size(), g_timer.get_elapsed());
                 }
             }
         }
@@ -1251,11 +1246,9 @@ TLE:
             s += board.move_score(move);
         s += board.move_score(best.main_move);
         score += s;
-//         fprintf(stderr, "%9d (+%9d)\n", score, s);
 
         res_moves.insert(res_moves.end(), all(best.prepare_moves));
         res_moves.push_back(best.main_move);
-//         break;
     }
     return res_moves;
 }
